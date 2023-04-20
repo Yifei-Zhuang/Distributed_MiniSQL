@@ -7,7 +7,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -54,7 +53,7 @@ public class SqlController {
     @Autowired
     SqlService sqlService;
 
-    @GetMapping("/exec")
+    @PostMapping("/exec")
     public MyResponse execSQL(@RequestBody Map<String, String> map, HttpServletResponse httpServletResponse) {
         String sql = map.get("sql");
         if (sql == null) {

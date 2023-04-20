@@ -1,20 +1,21 @@
 package master.service;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.annotation.PostConstruct;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import master.pojo.Region;
+import master.pojo.RegionWithTables;
+import master.utils.NetUtils;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.recipes.cache.CuratorCache;
 import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,37 +24,47 @@ import java.util.concurrent.ConcurrentHashMap;
 @Data
 @AllArgsConstructor
 public class ZKService {
-    public ConcurrentHashMap<String, String[]> regionTables;
+    public ConcurrentHashMap<String, ArrayList<String>> regionTables;
+    public ConcurrentHashMap<String, ArrayList<RegionWithTables>> tableRegions;
+    @Autowired
+    NetUtils netUtils;
     @Autowired
     CuratorFramework curatorFramework;
 
     @Autowired
-    List<Region> regions;
+    List<RegionWithTables> regions;
 
     public ZKService() {
         regionTables = new ConcurrentHashMap<>();
+        tableRegions = new ConcurrentHashMap<>();
     }
 
     @PostConstruct
     public void init() throws Exception {
         registerCallbacks();
-    }
-
-    //TODO 封装
-    public JSONObject sendPost(Region region, String path, String... params) {
-        assert region != null;
-        String url = "http://127.0.0.1:" + region.getPort() + "/" + path;
-        JSONObject paramMap = new JSONObject();
-        for (int i = 0; i < params.length; i += 2) {
-            paramMap.put(params[i], params[i + 1]);
+        //TODO 注册所有region的元信息
+        List<String> children = curatorFramework.getChildren().forPath("/lss");
+        for (String child : children) {
+            byte[] data = curatorFramework.getData().forPath("/lss/" + child);
+            RegionWithTables region = ((JSONObject) JSON.parse(new String(data))).toJavaObject(RegionWithTables.class);
+            regions.add(region);
+            regionTables.put(region.getRegionName(), new ArrayList<>(region.getTables()));
+            for (String table : region.getTables()) {
+                if (tableRegions.containsKey(table)) {
+                    tableRegions.put(table, new ArrayList<>());
+                }
+                tableRegions.get(table).add(region);
+            }
+            System.out.println(region);
         }
-        RestTemplate client = new RestTemplate();
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<JSONObject> httpEntity = new HttpEntity<JSONObject>(paramMap, headers);
-        return client.postForEntity(url, httpEntity, JSONObject.class).getBody();
     }
 
+    public JSONObject sendPost(Region region, String path, HashMap<String, String> params) {
+        String url = "http://127.0.0.1:" + region.getPort() + "/" + path;
+        return netUtils.sendPost(url, params);
+    }
+
+    //TODO 处理节点添加的情况
     public void registerCallbacks() {
         CuratorCache curatorCache = CuratorCache.build(curatorFramework, "/lss");
         curatorCache.listenable().addListener((e, oldData, newData) -> {
@@ -61,7 +72,7 @@ public class ZKService {
             if (e.equals(CuratorCacheListener.Type.NODE_DELETED)) {
                 String[] strs = oldData.getPath().split("/");
                 String regionName = strs[strs.length - 1];
-                String[] tableOfReginons = regionTables.get(regionName);
+                ArrayList<String> tableOfReginons = regionTables.get(regionName);
                 for (String table : tableOfReginons) {
                     String anotherRegionName = getAnotherRegionHasTheSameTable(regionName, table);
                     if (anotherRegionName == null) {
@@ -70,11 +81,14 @@ public class ZKService {
                     // dump
                     String currentDir = System.getProperty("user.dir");
                     Region region = getRegion(anotherRegionName);
-                    System.out.println(sendPost(region, "dump", "tableName", table, "path", currentDir + "/" + table + ".sql"));
+                    HashMap<String, String> params = new HashMap<>();
+                    params.put("tableName", table);
+                    params.put("path", currentDir + "/" + table + ".sql");
+                    System.out.println(sendPost(region, "dump", params));
                     // 随机挑选
                     while (true) {
                         Random random = new Random();
-                        int index = random.nextInt();
+                        int index = random.nextInt(regions.size());
                         Region region1 = regions.get(index);
                         if (region1.getRegionName().equals(anotherRegionName) || region1.getRegionName().equals(regionName)) {
                             continue;
@@ -90,7 +104,10 @@ public class ZKService {
                         if (tag) {
                             break;
                         } else {
-                            sendPost(region1, "import", "tableName", table, "path", currentDir + "/" + table + ".sql");
+                            HashMap<String, String> param = new HashMap<>();
+                            param.put("tableName", table);
+                            param.put("path", currentDir + "/" + table + ".sql");
+                            sendPost(region1, "import", param);
                             break;
                         }
                     }
@@ -99,7 +116,7 @@ public class ZKService {
                 // 加到map里
                 String[] strs = oldData.getPath().split("/");
                 String regionName = strs[strs.length - 1];
-                regionTables.put(regionName, new String[0]);
+                regionTables.put(regionName, new ArrayList<>());
             }
         });
     }
@@ -108,7 +125,7 @@ public class ZKService {
     public String getAnotherRegionHasTheSameTable(String exclude, String tableName) {
         for (var key : regionTables.keySet()) {
             if (!key.equals(exclude)) {
-                String[] cur = regionTables.get(key);
+                ArrayList<String> cur = regionTables.get(key);
                 for (String a : cur) {
                     if (a.equals(tableName)) {
                         return key;

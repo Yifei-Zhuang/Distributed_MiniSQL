@@ -33,12 +33,14 @@ public class ZKConfig {
         CuratorFramework curatorFramework = CuratorFrameworkFactory.builder()
                 .connectString(connectString)
                 .sessionTimeoutMs(sessionTimeoutMs)
-                .connectionTimeoutMs(connectionTimeoutMs)
                 .namespace(namespace)
+                .connectionTimeoutMs(connectionTimeoutMs)
                 .retryPolicy(retryPolicy)
                 .build();
-        curatorFramework.create().creatingParentsIfNeeded().forPath("/lss");
         curatorFramework.start();
+        if (curatorFramework.checkExists().forPath("/lss") == null) {
+            curatorFramework.create().creatingParentsIfNeeded().forPath("/lss");
+        }
         this.curatorFramework = curatorFramework;
         return curatorFramework;
     }

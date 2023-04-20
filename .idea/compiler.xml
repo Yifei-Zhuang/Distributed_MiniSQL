@@ -7,22 +7,24 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
-        <module name="Client" />
+        <module name="Region (1)" />
         <module name="Master" />
+        <module name="Client (1)" />
+        <module name="Client (2)" />
+        <module name="Region (2)" />
         <module name="Region" />
+        <module name="Master (1)" />
+        <module name="Client" />
+        <module name="Master (2)" />
       </profile>
     </annotationProcessing>
-    <bytecodeTargetLevel>
-      <module name="MasterServer" target="17" />
-      <module name="RegionServer" target="1.8" />
-      <module name="RPC" target="1.8" />
-    </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
       <module name="Master" options="-parameters" />
-      <module name="MasterServer" options="-parameters" />
+      <module name="Master (2)" options="-parameters" />
       <module name="Region" options="-parameters" />
+      <module name="Region (2)" options="-parameters" />
     </option>
   </component>
 </project>

@@ -1,9 +1,13 @@
 package com.zhangyin.region.service;
 
+import com.alibaba.fastjson2.JSON;
+import com.zhangyin.region.pojo.Region;
 import org.apache.curator.framework.CuratorFramework;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
 
 @Service
 public class ZKService {
@@ -13,23 +17,30 @@ public class ZKService {
     SqlService sqlService;
     @Value("${zookeeper.client.name}")
     private String regionName;
+    @Value("${server.port}")
+    private int port;
 
     public void init() throws Exception {
         System.out.println("ZK init!");
         String list = sqlService.execSelectSql("show tables");
-        String[] tableNames = list.trim().split("\n");
+        String[] tableNames = new String[0];
+        if (list != null) {
+            tableNames = list.trim().split("\n");
+        }
         // drop all table
         for (String table : tableNames) {
             if (!table.isEmpty()) {
                 sqlService.execCreateAndDropSql("drop table " + table + ";");
             }
         }
-        try {
+        if (curatorFramework.checkExists().forPath("/lss/" + regionName) != null) {
             curatorFramework.delete().forPath("/lss/" + regionName);
-        } catch (Exception e) {
-
         }
-        curatorFramework.create().creatingParentsIfNeeded().forPath("/lss/" + regionName);
+        Region region = new Region();
+        region.setPort(port);
+        region.setRegionName(regionName);
+        region.setTables(new ArrayList<>());
+        curatorFramework.create().creatingParentsIfNeeded().forPath("/lss/" + regionName, JSON.toJSONString(region).getBytes());
         System.out.println("ZK init done!");
     }
 }

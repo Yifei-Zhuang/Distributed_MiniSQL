@@ -4,11 +4,6 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-enum StatusCode {
-    SUCCESS,
-    FAIL
-}
-
 
 @Data
 @AllArgsConstructor
@@ -17,19 +12,19 @@ public class Response {
     public StatusCode statusCode;
     public String msg;
 
-    public static MyResponse success() {
-        return new MyResponse(StatusCode.SUCCESS, "");
+    public static Response success() {
+        return new Response(StatusCode.SUCCESS, "");
     }
 
-    public static MyResponse success(String msg) {
-        return new MyResponse(StatusCode.SUCCESS, msg);
+    public static Response success(String msg) {
+        return new Response(StatusCode.SUCCESS, msg);
     }
 
-    public static MyResponse fail() {
-        return new MyResponse(StatusCode.FAIL, "");
+    public static Response fail() {
+        return new Response(StatusCode.FAIL, "");
     }
 
-    public static MyResponse fail(String msg) {
-        return new MyResponse(StatusCode.FAIL, msg);
+    public static Response fail(String msg) {
+        return new Response(StatusCode.FAIL, msg);
     }
 }
