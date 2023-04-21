@@ -16,47 +16,177 @@
     <properties>
         <java.version>17</java.version>
     </properties>
+    <!--<?xml version="1.0" encoding="UTF-8"?>-->
+    <!--<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"-->
+    <!--         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">-->
+    <!--    <modelVersion>4.0.0</modelVersion>-->
+    <!--    <parent>-->
+    <!--        <groupId>org.springframework.boot</groupId>-->
+    <!--        <artifactId>spring-boot-starter-parent</artifactId>-->
+    <!--        <version>3.0.5</version>-->
+    <!--        <relativePath/> &lt;!&ndash; lookup parent from repository &ndash;&gt;-->
+    <!--    </parent>-->
+    <!--    <groupId>com.zhangyin</groupId>-->
+    <!--    <artifactId>Region</artifactId>-->
+    <!--    <version>0.0.1-SNAPSHOT</version>-->
+    <!--    <name>Region</name>-->
+    <!--    <description>Region</description>-->
+    <!--    <properties>-->
+    <!--        <java.version>17</java.version>-->
+    <!--    </properties>-->
+    <!--    <dependencies>-->
+    <!--        <dependency>-->
+    <!--            <groupId>org.springframework.boot</groupId>-->
+    <!--            <artifactId>spring-boot-starter-web</artifactId>-->
+    <!--        </dependency>-->
+    <!--        <dependency>-->
+    <!--            <groupId>org.mybatis.spring.boot</groupId>-->
+    <!--            <artifactId>mybatis-spring-boot-starter</artifactId>-->
+    <!--            <version>3.0.0</version>-->
+    <!--        </dependency>-->
+
+    <!--        <dependency>-->
+    <!--            <groupId>org.projectlombok</groupId>-->
+    <!--            <artifactId>lombok</artifactId>-->
+    <!--            <optional>true</optional>-->
+    <!--        </dependency>-->
+    <!--        <dependency>-->
+    <!--            <groupId>org.springframework.boot</groupId>-->
+    <!--            <artifactId>spring-boot-starter-test</artifactId>-->
+    <!--            <scope>test</scope>-->
+    <!--        </dependency>-->
+    <!--        <dependency>-->
+    <!--            <groupId>mysql</groupId>-->
+    <!--            <artifactId>mysql-connector-java</artifactId>-->
+    <!--            <version>8.0.30</version>-->
+    <!--        </dependency>-->
+    <!--        <dependency>-->
+    <!--            <groupId>org.apache.curator</groupId>-->
+    <!--            <artifactId>curator-framework</artifactId>-->
+    <!--            <version>5.2.1</version>-->
+    <!--            <scope>compile</scope>-->
+    <!--        </dependency>-->
+    <!--        <dependency>-->
+    <!--            <groupId>org.apache.curator</groupId>-->
+    <!--            <artifactId>curator-recipes</artifactId>-->
+    <!--            <version>5.2.1</version>-->
+    <!--            <exclusions>-->
+    <!--                <exclusion>-->
+    <!--                    <groupId>org.apache.zookeeper</groupId>-->
+    <!--                    <artifactId>zookeeper</artifactId>-->
+    <!--                </exclusion>-->
+    <!--            </exclusions>-->
+    <!--            <scope>compile</scope>-->
+    <!--        </dependency>-->
+    <!--        <dependency>-->
+    <!--            <groupId>com.alibaba.fastjson2</groupId>-->
+    <!--            <artifactId>fastjson2</artifactId>-->
+    <!--            <version>2.0.2</version>-->
+    <!--        </dependency>-->
+    <!--            <dependency>-->
+    <!--                <groupId>com.alibaba.otter</groupId>-->
+    <!--                <artifactId>canal.client</artifactId>-->
+    <!--                <version>1.1.4</version>-->
+    <!--                &lt;!&ndash; 去掉guava依赖，否则启动报错 &ndash;&gt;-->
+    <!--                <exclusions>-->
+    <!--                    <exclusion>-->
+    <!--                        <groupId>com.google.guava</groupId>-->
+    <!--                        <artifactId>guava</artifactId>-->
+    <!--                    </exclusion>-->
+    <!--                </exclusions>-->
+    <!--            </dependency>-->
+    <!--            <dependency>-->
+    <!--                <groupId>commons-dbutils</groupId>-->
+    <!--                <artifactId>commons-dbutils</artifactId>-->
+    <!--                <version>1.7</version>-->
+    <!--            </dependency>-->
+    <!--    </dependencies>-->
+
+    <!--    <build>-->
+    <!--        <plugins>-->
+    <!--            <plugin>-->
+    <!--                <groupId>org.springframework.boot</groupId>-->
+    <!--                <artifactId>spring-boot-maven-plugin</artifactId>-->
+    <!--                <configuration>-->
+    <!--                    <excludes>-->
+    <!--                        <exclude>-->
+    <!--                            <groupId>org.projectlombok</groupId>-->
+    <!--                            <artifactId>lombok</artifactId>-->
+    <!--                        </exclude>-->
+    <!--                    </excludes>-->
+    <!--                </configuration>-->
+    <!--            </plugin>-->
+    <!--            &lt;!&ndash;            <plugin>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                <artifactId>maven-surefire-plugin</artifactId>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                <configuration>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                    <useFile>false</useFile>&ndash;&gt;-->
+    <!--            &lt;!&ndash;                </configuration>&ndash;&gt;-->
+    <!--            &lt;!&ndash;            </plugin>&ndash;&gt;-->
+    <!--        </plugins>-->
+    <!--    </build>-->
+
+    <!--</project>-->
+
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.mybatis.spring.boot</groupId>
-            <artifactId>mybatis-spring-boot-starter</artifactId>
-            <version>3.0.0</version>
-        </dependency>
 
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
-        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>mysql</groupId>
-            <artifactId>mysql-connector-java</artifactId>
-            <version>8.0.30</version>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
         </dependency>
-
+        <dependency>
+            <groupId>org.apache.curator</groupId>
+            <artifactId>curator-framework</artifactId>
+            <version>5.2.1</version>
+            <scope>compile</scope>
+        </dependency>
         <dependency>
             <groupId>org.apache.curator</groupId>
             <artifactId>curator-recipes</artifactId>
-            <version>5.1.0</version>
+            <version>5.2.1</version>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>com.alibaba.fastjson2</groupId>
             <artifactId>fastjson2</artifactId>
             <version>2.0.2</version>
         </dependency>
+        <dependency>
+            <groupId>com.alibaba.otter</groupId>
+            <artifactId>canal.client</artifactId>
+            <version>1.1.4</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.google.guava</groupId>
+                    <artifactId>guava</artifactId>
+                </exclusion>
+                <exclusion>
+                    <artifactId>zookeeper</artifactId>
+                    <groupId>org.apache.zookeeper</groupId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+            <version>8.0.30</version>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -67,12 +197,6 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
-                </configuration>
-            </plugin>
-            <plugin>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <useFile>false</useFile>
                 </configuration>
             </plugin>
         </plugins>

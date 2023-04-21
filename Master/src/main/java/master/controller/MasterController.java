@@ -33,7 +33,7 @@ public class MasterController {
     }
 
     @PostMapping("/exec")
-    public Response execSQL(@RequestBody SQL sql) {
+    public Response execSQL(@RequestBody SQL sql) throws Exception {
         String[] arr = sql.sql.trim().split(" ");
         String type = arr[0];
         if ("create".equals(type)) {
@@ -116,7 +116,7 @@ public class MasterController {
             }
         } else {
             List<Region> relatedRegions = zkService.tableRegions.get(sql.tableName);
-            if (relatedRegions.isEmpty()) {
+            if (relatedRegions == null || relatedRegions.isEmpty()) {
                 return Response.fail("不存在该表");
             }
             String result = null;

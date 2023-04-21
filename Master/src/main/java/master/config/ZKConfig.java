@@ -38,10 +38,10 @@ public class ZKConfig {
                 .retryPolicy(retryPolicy)
                 .build();
         curatorFramework.start();
+        this.curatorFramework = curatorFramework;
         if (curatorFramework.checkExists().forPath("/lss") == null) {
             curatorFramework.create().creatingParentsIfNeeded().forPath("/lss");
         }
-        this.curatorFramework = curatorFramework;
         return curatorFramework;
     }
 }

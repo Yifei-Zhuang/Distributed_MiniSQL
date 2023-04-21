@@ -19,6 +19,9 @@ public class ZKService {
     private String regionName;
     @Value("${server.port}")
     private int port;
+    private static boolean initRegionDone = false;
+    @Autowired
+    Region region;
 
     public void init() throws Exception {
         System.out.println("ZK init!");
@@ -28,7 +31,8 @@ public class ZKService {
             tableNames = list.trim().split("\n");
         }
         // drop all table
-        for (String table : tableNames) {
+        for (int i = 1; i < tableNames.length; i++) {
+            String table = tableNames[i];
             if (!table.isEmpty()) {
                 sqlService.execCreateAndDropSql("drop table " + table + ";");
             }
@@ -36,11 +40,11 @@ public class ZKService {
         if (curatorFramework.checkExists().forPath("/lss/" + regionName) != null) {
             curatorFramework.delete().forPath("/lss/" + regionName);
         }
-        Region region = new Region();
         region.setPort(port);
         region.setRegionName(regionName);
         region.setTables(new ArrayList<>());
         curatorFramework.create().creatingParentsIfNeeded().forPath("/lss/" + regionName, JSON.toJSONString(region).getBytes());
+        initRegionDone = true;
         System.out.println("ZK init done!");
     }
 }

@@ -35,6 +35,7 @@ public class SqlService {
             return 0;
         }
         try (PreparedStatement ps = conn.prepareStatement(sql);) {
+            System.out.println("sql:" + ps.toString());
             return ps.executeUpdate(sql);
         } finally {
             try {
@@ -68,6 +69,11 @@ public class SqlService {
             ResultSetMetaData resultSetMetaData = rs.getMetaData();
             int count = resultSetMetaData.getColumnCount();
             StringBuilder stringBuilder = new StringBuilder();
+            for (int i = 0; i < count; i++) {
+                stringBuilder.append(resultSetMetaData.getColumnName(i + 1));
+                stringBuilder.append("\t");
+            }
+            stringBuilder.append('\n');
             while (rs.next()) {
                 stringBuilder.append(rs.getString(1));
                 for (int i = 2; i <= count; i++) {

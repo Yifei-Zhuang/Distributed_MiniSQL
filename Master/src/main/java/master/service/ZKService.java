@@ -170,5 +170,10 @@ public class ZKService {
         curatorFramework.setData().forPath("/lss/" + region.getRegionName(), JSON.toJSONString(region).getBytes());
     }
 
+    @Deprecated
+    public void writeTable2RegionMapping() throws Exception {
+        curatorFramework.setData().forPath("/lss/__tableMeta__", JSON.toJSONString(tableRegions).getBytes());
+    }
+
 
 }
