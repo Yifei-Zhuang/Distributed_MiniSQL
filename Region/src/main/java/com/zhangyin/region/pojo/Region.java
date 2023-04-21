@@ -10,7 +10,8 @@ import java.util.ArrayList;
 @AllArgsConstructor
 @NoArgsConstructor
 public class Region {
+    public String host = "127.0.0.1";
     public String regionName;
     public int port;
-    public ArrayList<String> tables;
+    public ArrayList<Table> tables;
 }
