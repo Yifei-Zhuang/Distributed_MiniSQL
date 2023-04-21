@@ -42,7 +42,6 @@ public class ZKService {
     @PostConstruct
     public void init() throws Exception {
         registerCallbacks();
-        //TODO 注册所有region的元信息
         List<String> children = curatorFramework.getChildren().forPath("/lss");
         for (String child : children) {
             byte[] data = curatorFramework.getData().forPath("/lss/" + child);
@@ -55,7 +54,6 @@ public class ZKService {
                 }
                 tableRegions.get(table).add(region);
             }
-            System.out.println(region);
         }
     }
 
@@ -117,6 +115,8 @@ public class ZKService {
                 String[] strs = oldData.getPath().split("/");
                 String regionName = strs[strs.length - 1];
                 regionTables.put(regionName, new ArrayList<>());
+                System.out.println(newData);
+                // TODO 向regions中添加对应的region信息
             }
         });
     }
