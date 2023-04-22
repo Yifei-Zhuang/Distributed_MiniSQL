@@ -1,5 +1,3 @@
-zk维护所有表的主从信息
-
-master转发sql的时候，加上是否是主表的bool信息
-
-在zk中维护是否是主表的元信息
+region直接修改zk的信息
+master去监听，然后做主备切换什么的
+client自己去拉zk的信息，然后去请求zk

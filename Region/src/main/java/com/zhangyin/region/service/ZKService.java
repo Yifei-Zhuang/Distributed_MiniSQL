@@ -2,6 +2,7 @@ package com.zhangyin.region.service;
 
 import com.zhangyin.region.pojo.Region;
 import org.apache.curator.framework.CuratorFramework;
+import org.apache.zookeeper.CreateMode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -29,11 +30,10 @@ public class ZKService {
         region.setPort(port);
         region.setRegionName(regionName);
         region.setTables(new ArrayList<>());
-
         if (curatorFramework.checkExists().forPath("/lss/" + regionName) != null) {
             curatorFramework.delete().forPath("/lss/" + regionName);
         }
-        curatorFramework.create().creatingParentsIfNeeded().forPath("/lss/" + regionName, region.toZKNodeValue().getBytes());
+        curatorFramework.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath("/lss/" + regionName, region.toZKNodeValue().getBytes());
         initRegionDone = true;
         System.out.println("ZK init done!");
     }
@@ -85,11 +85,11 @@ public class ZKService {
             assert temp != null;
 
             temp.tableCount--;
-            temp.tables = new ArrayList<>(temp.getTables().stream().filter(table -> !table.equals(victim)).toList());
+            temp.tables = new ArrayList<>(temp.getTables().stream().filter(table -> {
+                return !table.equals(victim) && !table.equals(victim + "_slave");
+            }).toList());
 
-            curatorFramework.setData().forPath("/lss/" + regionName, temp.toZKNodeValue().getBytes());
-            region.copyFrom(temp.toZKNodeValue());
-            System.out.println("dropTable: " + region);
+            updateNode(temp);
         } catch (Exception e) {
             e.printStackTrace();
         }

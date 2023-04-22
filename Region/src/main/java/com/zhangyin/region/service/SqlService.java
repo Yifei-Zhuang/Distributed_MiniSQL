@@ -1,5 +1,7 @@
 package com.zhangyin.region.service;
 
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.zhangyin.region.pojo.Region;
 import com.zhangyin.region.utils.NetUtils;
 import jakarta.annotation.PostConstruct;
@@ -35,21 +37,46 @@ public class SqlService {
 
     @PostConstruct
     public void initMethod() throws SQLException {
-        String list = execSelectSql("show tables");
-        String[] tableNames = new String[0];
-        if (list != null) {
-            tableNames = list.trim().split("\n");
-        }
-        // drop all table
-        for (int i = 1; i < tableNames.length; i++) {
-            String table = tableNames[i];
-            if (!table.isEmpty()) {
-                execCreateAndDropSql("drop table " + table + ";");
-            }
-        }
-        region.setTableCount(0);
-        zkService.updateNode(region);
+//        String list = execSelectSql("show tables");
+//        String[] tableNames = new String[0];
+//        if (list != null) {
+//            tableNames = list.trim().split("\n");
+//        }
+//        // drop all table
+//        for (int i = 1; i < tableNames.length; i++) {
+//            String table = tableNames[i];
+//            if (!table.isEmpty()) {
+//                execCreateAndDropSql("drop table " + table + ";");
+//            }
+//        }
+//        region.setTableCount(0);
+//        zkService.updateNode(region);
 
+    }
+
+    public void init() throws SQLException {
+        try {
+            Connection c = getConnectionWithoutDatabase();
+            Statement s = c.createStatement();
+            s.execute("drop database if exists " + databaseName);
+            s.execute("create database if not exists " + databaseName);
+            s.close();
+            c.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw e;
+        }
+    }
+
+    public Connection getConnectionWithoutDatabase() {
+        System.out.println("databaseName:" + databaseName);
+        Connection conn = null;
+        try {
+            conn = DriverManager.getConnection(JDBC_URL.substring(0, JDBC_URL.length() - 1), USER, PASSWORD);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return conn;
     }
 
     public Connection getConnection() {
@@ -85,28 +112,36 @@ public class SqlService {
             int rowCount = ps.executeUpdate(sql);
             String tableName = null;
             String[] temp = sql.trim().split(" ");
-            if ("insert".equals(temp[0])) {
+            if ("insert".equals(temp[0]) || "delete".equals(temp[0])) {
                 tableName = temp[2];
             } else {
                 tableName = temp[1];
             }
-            // 当前为master，进行主从同步
+            boolean master = false;
+            // 如果当前为master，进行主从同步
+            for (String table : region.getTables()) {
+                if (table.equals(tableName)) {
+                    master = true;
+                    break;
+                }
+            }
+            if (!master) {
+                return rowCount;
+            }
             List<Region> regions = zkService.getAllRegions();
             for (Region pointer : regions) {
                 // 遍历所有的slave region，发送sql请求
-                if (pointer.getRegionName().equals(region.regionName) || !pointer.containsTable(tableName)) {
+                if (pointer.getRegionName().equals(region.regionName) || !pointer.containsTable(tableName + "_slave")) {
                     continue;
                 }
                 // 对slave发送请求
                 String finalTableName = tableName;
-                es.submit(() -> {
-                    String slaveUrl = pointer.getHost() + ":" + pointer.getHost() + "/exec";
-                    HashMap<String, String> map = new HashMap<>();
-                    map.put("sql", sql);
-                    map.put("tableName", finalTableName);
-                    System.out.println(netUtils.sendPost(slaveUrl, map));
-                    return 0;
-                });
+                String slaveUrl = pointer.getHost() + ":" + pointer.getPort() + "/exec";
+                HashMap<String, String> map = new HashMap<>();
+                map.put("sql", sql);
+                map.put("tableName", finalTableName);
+                System.out.println(netUtils.sendPost(slaveUrl, map));
+
             }
             return rowCount;
         } finally {
@@ -119,6 +154,7 @@ public class SqlService {
     }
 
     public String execSelectSql(String sql) throws SQLException {
+        // TODO 修改返回格式
         Connection conn = getConnection();
         if (conn == null) {
             System.err.println("获取数据库连接失败，请重试");
@@ -130,21 +166,57 @@ public class SqlService {
             ResultSet rs = ps.executeQuery(sql);
             ResultSetMetaData resultSetMetaData = rs.getMetaData();
             int count = resultSetMetaData.getColumnCount();
-            StringBuilder stringBuilder = new StringBuilder();
+//            StringBuilder stringBuilder = new StringBuilder();
+            JSONObject jsonObject = new JSONObject();
+            JSONArray jsonArray = new JSONArray();
+            List<String> columnNames = new ArrayList<>();
             for (int i = 0; i < count; i++) {
-                stringBuilder.append(resultSetMetaData.getColumnName(i + 1));
-                stringBuilder.append(" ");
+//                stringBuilder.append(resultSetMetaData.getColumnName(i + 1));
+//                stringBuilder.append(" ");
+                columnNames.add(resultSetMetaData.getColumnName(i + 1));
+                jsonArray.add(resultSetMetaData.getColumnName(i + 1));
             }
-            stringBuilder.append('\n');
+            jsonObject.put("fields", jsonArray);
+//            stringBuilder.append('\n');
+            jsonArray = new JSONArray();
             while (rs.next()) {
-                stringBuilder.append(rs.getString(1));
-                for (int i = 2; i <= count; i++) {
-                    stringBuilder.append(" ");
-                    stringBuilder.append(rs.getString(i));
+                JSONObject temp = new JSONObject();
+                for (int i = 1; i <= count; i++) {
+                    String columnName = resultSetMetaData.getColumnName(i);
+                    if (resultSetMetaData.getColumnType(i) == java.sql.Types.ARRAY) {
+                        temp.put(columnName, rs.getArray(columnName));
+                    } else if (resultSetMetaData.getColumnType(i) == java.sql.Types.BIGINT) {
+                        temp.put(columnName, rs.getInt(columnName));
+                    } else if (resultSetMetaData.getColumnType(i) == java.sql.Types.BOOLEAN) {
+                        temp.put(columnName, rs.getBoolean(columnName));
+                    } else if (resultSetMetaData.getColumnType(i) == java.sql.Types.BLOB) {
+                        temp.put(columnName, rs.getBlob(columnName));
+                    } else if (resultSetMetaData.getColumnType(i) == java.sql.Types.DOUBLE) {
+                        temp.put(columnName, rs.getDouble(columnName));
+                    } else if (resultSetMetaData.getColumnType(i) == java.sql.Types.FLOAT) {
+                        temp.put(columnName, rs.getFloat(columnName));
+                    } else if (resultSetMetaData.getColumnType(i) == java.sql.Types.INTEGER) {
+                        temp.put(columnName, rs.getInt(columnName));
+                    } else if (resultSetMetaData.getColumnType(i) == java.sql.Types.NVARCHAR) {
+                        temp.put(columnName, rs.getNString(columnName));
+                    } else if (resultSetMetaData.getColumnType(i) == java.sql.Types.VARCHAR) {
+                        temp.put(columnName, rs.getString(columnName));
+                    } else if (resultSetMetaData.getColumnType(i) == java.sql.Types.TINYINT) {
+                        temp.put(columnName, rs.getInt(columnName));
+                    } else if (resultSetMetaData.getColumnType(i) == java.sql.Types.SMALLINT) {
+                        temp.put(columnName, rs.getInt(columnName));
+                    } else if (resultSetMetaData.getColumnType(i) == java.sql.Types.DATE) {
+                        temp.put(columnName, rs.getDate(columnName));
+                    } else if (resultSetMetaData.getColumnType(i) == java.sql.Types.TIMESTAMP) {
+                        temp.put(columnName, rs.getTimestamp(columnName));
+                    } else {
+                        temp.put(columnName, rs.getObject(columnName));
+                    }
                 }
-                stringBuilder.append("\n");
+                jsonArray.add(temp);
             }
-            return stringBuilder.toString();
+            jsonObject.put("data", jsonArray);
+            return jsonObject.toJSONString();
         } finally {
             try {
                 conn.close();
@@ -164,11 +236,20 @@ public class SqlService {
             String[] temp = sql.trim().split(" ");
             String type = temp[0];
             String tableName = temp[2];
+            if ("if".equals(temp[2])) {
+                // drop table if exist a;
+                tableName = temp[4];
+            }
+            if (tableName.endsWith(";")) {
+                tableName = tableName.substring(0, tableName.length() - 1);
+            }
             // 查询表是否已经存在
             List<Region> regions = zkService.getAllRegions();
-            for (Region pointer : regions) {
-                if (pointer.containsTable(tableName) || pointer.containsTable(tableName + "_slave")) {
-                    throw new SQLException("表已经存在");
+            if ("create".equals(type)) {
+                for (Region pointer : regions) {
+                    if (pointer.containsTable(tableName) || pointer.containsTable(tableName + "_slave")) {
+                        throw new SQLException("表已经存在");
+                    }
                 }
             }
             boolean result = ps.execute(sql);
@@ -179,8 +260,7 @@ public class SqlService {
             }
             return result;
         } catch (Exception e) {
-            e.printStackTrace();
-            return false;
+            throw e;
         } finally {
             try {
                 conn.close();
