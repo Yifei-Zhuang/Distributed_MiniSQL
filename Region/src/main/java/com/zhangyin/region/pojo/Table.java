@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
+@Deprecated
 public class Table {
     public String name;
     public boolean isMasterTable;

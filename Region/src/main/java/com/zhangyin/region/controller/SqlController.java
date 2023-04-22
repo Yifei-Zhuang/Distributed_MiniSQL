@@ -1,6 +1,8 @@
 package com.zhangyin.region.controller;
 
+import com.zhangyin.region.pojo.Region;
 import com.zhangyin.region.service.SqlService;
+import com.zhangyin.region.service.ZKService;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -53,6 +55,12 @@ public class SqlController {
     @Autowired
     SqlService sqlService;
 
+    @Autowired
+    ZKService zkService;
+
+    @Autowired
+    Region region;
+
     @PostMapping("/exec")
     public MyResponse execSQL(@RequestBody Map<String, String> map, HttpServletResponse httpServletResponse) {
         String sql = map.get("sql");
@@ -97,13 +105,14 @@ public class SqlController {
         try {
             String tableName = map.get("tableName");
             String path = map.get("path");
-            sqlService.execCreateAndDropSql("drop table " + tableName + ";");
+            sqlService.execCreateAndDropSql("drop table " + tableName + " if exists;");
             String connUrl = environment.getProperty("spring.datasource.url");
             String[] temp = connUrl.split("/");
             String databaseName = temp[temp.length - 1];
-            String cmd = "mysql -uroot -pmysql " + databaseName + " < " + path;
+            String cmd = "mysql -u root -pmysql " + databaseName + " < " + path;
             Runtime runtime = Runtime.getRuntime();
             runtime.exec(cmd);
+            zkService.createTable(region.toZKNodeValue(), tableName + "_slave");
         } catch (SQLException e) {
             throw new RuntimeException(e);
         } catch (IOException e) {
