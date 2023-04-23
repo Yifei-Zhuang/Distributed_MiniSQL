@@ -1,26 +1,24 @@
 package master.service;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.annotation.PostConstruct;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import master.pojo.Master;
 import master.pojo.Region;
-import master.pojo.Table;
-import master.utils.JSONUtil;
 import master.utils.NetUtils;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.recipes.cache.CuratorCache;
 import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
+import org.apache.zookeeper.common.Time;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Random;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @author zhuangyifei
@@ -29,21 +27,21 @@ import java.util.concurrent.ConcurrentHashMap;
 @Data
 @AllArgsConstructor
 public class ZKService {
-    public ConcurrentHashMap<String, List<Table>> regionTables;
-    public ConcurrentHashMap<String, List<Region>> tableRegions;
+    //    public ConcurrentHashMap<String, List<Table>> regionTables;
+//    public ConcurrentHashMap<String, List<Region>> tableRegions;
     @Autowired
     NetUtils netUtils;
     @Autowired
     CuratorFramework curatorFramework;
-
-    @Autowired
-    JSONUtil jsonUtil;
     @Autowired
     List<Region> regions;
 
+    @Value("${server.port}")
+    int serverPort;
+
     public ZKService() {
-        regionTables = new ConcurrentHashMap<>();
-        tableRegions = new ConcurrentHashMap<>();
+//        regionTables = new ConcurrentHashMap<>();
+//        tableRegions = new ConcurrentHashMap<>();
     }
 
     @PostConstruct
@@ -52,104 +50,180 @@ public class ZKService {
         List<String> children = curatorFramework.getChildren().forPath("/lss");
         for (String child : children) {
             byte[] data = curatorFramework.getData().forPath("/lss/" + child);
-            Region region = ((JSONObject) JSON.parse(new String(data))).toJavaObject(Region.class);
-            region.setTables((ArrayList<Table>) jsonUtil.JSONArrayToTableArray((JSONArray) ((Object) region.getTables())));
+            Region region = Region.deserializeFromString(new String(data));
             regions.add(region);
-            regionTables.put(region.getRegionName(), new ArrayList<>(region.getTables()));
-            for (Table table : region.getTables()) {
-                if (!tableRegions.containsKey(table.getName())) {
-                    tableRegions.put(table.getName(), new ArrayList<>());
-                }
-                tableRegions.get(table.getName()).add(region);
+        }
+        // 注册自己的host和ip
+        Master master = new Master();
+        master.setHost(java.net.InetAddress.getLocalHost().getHostAddress());
+        master.setPort(serverPort);
+        curatorFramework.setData().forPath("/master", (master.getHost() + "," + master.getPort()).getBytes());
+    }
+
+    public List<Region> getAllRegions() {
+        try {
+            List<String> regionNames = curatorFramework.getChildren().forPath("/lss");
+            List<Region> regionList = new ArrayList<>();
+            for (String regionName : regionNames) {
+                byte[] data = curatorFramework.getData().forPath("/lss/" + regionName);
+                Region region = Region.deserializeFromString(new String(data));
+                regionList.add(region);
             }
+            return regionList;
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException(e);
         }
     }
 
+
     public JSONObject sendPost(Region region, String path, HashMap<String, String> params) {
-        String url = "http://127.0.0.1:" + region.getPort() + "/" + path;
+        String url = region.getHost() + ":" + region.getPort() + "/" + path;
         return netUtils.sendPost(url, params);
+    }
+
+    public void refreshRegion() {
+        regions.clear();
+        regions.addAll(getAllRegions());
+    }
+
+    public List<Region> getRegionsNotHaveTable(String regionName, String tableName) {
+        List<Region> regionsNotHaveTable = new ArrayList<>();
+        regions.clear();
+        regions.addAll(getAllRegions());
+        for (Region region : regions) {
+            if (!region.getTables().contains(tableName) && !region.getRegionName().equals(regionName)) {
+                regionsNotHaveTable.add(region);
+            }
+        }
+        return regionsNotHaveTable;
     }
 
     public void registerCallbacks() {
         CuratorCache curatorCache = CuratorCache.build(curatorFramework, "/lss");
-        curatorCache.listenable().addListener((e, oldData, newData) -> {
-            //TODO 分布式锁
-            if (e.equals(CuratorCacheListener.Type.NODE_DELETED)) {
-                String[] strs = oldData.getPath().split("/");
-                String regionName = strs[strs.length - 1];
-                List<Table> tableOfRegions = regionTables.get(regionName);
-                regions.remove(getRegion(regionName));
-                regionTables.remove(regionName);
-                for (Table table : tableOfRegions) {
-                    tableRegions.get(table.getName()).remove(getRegion(regionName));
-                }
-                for (Table table : tableOfRegions) {
-                    String anotherRegionName = getAnotherRegionHasTheSameTable(regionName, table.getName());
-                    if (anotherRegionName == null) {
-                        throw new RuntimeException("该表只有一个副本集，异常");
-                    }
-                    //TODO 判断是不是master表，如果是，那么进行主从切换，然后更新zk的主从信息
-
-                    // dump
-                    String currentDir = System.getProperty("user.dir");
-                    Region region = getRegion(anotherRegionName);
-                    HashMap<String, String> params = new HashMap<>();
-                    params.put("tableName", table.getName());
-                    params.put("path", currentDir + "/" + table.getName() + ".sql");
-                    System.out.println(sendPost(region, "dump", params));
-                    // 随机挑选
-                    while (true) {
-                        Random random = new Random();
-                        int index = random.nextInt(regions.size());
-                        Region region1 = regions.get(index);
-                        if (region1.getRegionName().equals(anotherRegionName) || region1.getRegionName().equals(regionName)) {
-                            continue;
+        curatorCache.listenable().addListener(CuratorCacheListener.builder()
+                .forInitialized(() -> {
+                    System.out.println("cache initialize");
+                }).forCreates(childData -> {
+                    if (childData != null) {
+                        regions.clear();
+                        regions.addAll(getAllRegions());
+                        // 新节点进来，那么添加到regions里面
+                        if (childData.getData() == null) {
+                            return;
                         }
-                        boolean tag = false;
-                        for (Table curtable : regionTables.get(region1.getRegionName())) {
-                            if (curtable.getName().equals(table.getName())) {
-                                // 已经有两个表，break
-                                tag = true;
-                                break;
+                        System.out.println("[cache]: create " + new String(childData.getData()));
+                        Region region = Region.deserializeFromString(new String(childData.getData()));
+                        for (Region region1 : regions) {
+                            if (region != null && region.equals(region1)) {
+                                return;
                             }
                         }
-                        if (tag) {
-                            break;
-                        } else {
-                            HashMap<String, String> param = new HashMap<>();
-                            param.put("tableName", table.getName());
-                            param.put("path", currentDir + "/" + table.getName() + ".sql");
-                            sendPost(region1, "import", param);
-                            //TODO 更新ZK
-                            break;
+                    }
+                }).forDeletes(childData -> {
+                    if (childData != null) {
+                        System.out.println("[cache]: delete " + new String(childData.getData()));
+                        // 节点删除，需要做主从迁移
+                        Region region = Region.deserializeFromString(new String(childData.getData()));
+                        assert region != null;
+                        regions.clear();
+                        regions.addAll(getAllRegions());
+                        List<String> tables = region.getTables();
+                        System.out.println(region);
+                        for (var table : tables) {
+                            if (table.endsWith("_slave")) {
+                                continue;
+                            }
+                            // 这个表是主表，那么做主从切换
+                            // 具体来说，就是从region里选一个有这张表的节点，把这个region的这个表设置为主表
+                            // 由于之前做了数据同步，这里只需要修改zk里面的数据就可以了
+                            for (var r : regions) {
+                                if (r.getTables().contains(table + "_slave")) {
+                                    // 找到了一个有这张表的region
+                                    r.getTables().remove(table + "_slave");
+                                    r.getTables().add(table);
+                                    try {
+                                        writeRegion(r);
+                                        for (var r1 : regions) {
+                                            if (!r1.getTables().contains(table) && !r1.getTables().contains(table + "_slave")) {
+                                                // slave add
+                                                HashMap<String, String> map = new HashMap<>();
+                                                map.put("tableName", table);
+                                                map.put("region", r.toZKNodeValue());
+                                                String url = "http://" + r1.getHost() + ":" + r1.getPort() + "/dump";
+                                                System.out.println(url);
+                                                netUtils.sendPost(url, map);
+                                            }
+                                        }
+                                    } catch (Exception e) {
+                                        e.printStackTrace();
+                                    }
+                                    break;
+                                }
+                            }
                         }
                     }
-                }
-            } else if (e.equals(CuratorCacheListener.Type.NODE_CREATED)) {
-                // 加到map里
-                String[] strs = oldData.getPath().split("/");
-                String regionName = strs[strs.length - 1];
-                regionTables.put(regionName, new ArrayList<>());
-                System.out.println(newData);
-                // TODO 向regions中添加对应的region信息
-
-            }
-        });
-    }
-
-
-    public String getAnotherRegionHasTheSameTable(String exclude, String tableName) {
-        for (var key : regionTables.keySet()) {
-            if (!key.equals(exclude)) {
-                List<Table> cur = regionTables.get(key);
-                for (Table table : cur) {
-                    if (table.getName().equals(tableName)) {
-                        return key;
+                }).forChanges((oldData, newData) -> {
+                    System.out.println("[cache]: change " + new String(oldData.getData()) + " -> " + new String(newData.getData()));
+                    Region r1 = Region.deserializeFromString(new String(oldData.getData()));
+                    Region r2 = Region.deserializeFromString(new String(newData.getData()));
+                    assert r1 != null;
+                    assert r2 != null;
+                    if (r1.getTables().size() == r2.getTables().size()) {
+                        // 主从迁移，不需要修改
+                        return;
+                    } else if (r1.getTables().size() < r2.getTables().size()) {
+                        // 有region增加了表
+                        String TableName = r2.getTables().get(r2.getTableCount() - 1);
+                        if (TableName.endsWith("_slave")) {
+                            return;
+                        }
+                        List<Region> regionsNotHaveTable = getRegionsNotHaveTable(r2.getRegionName(), r2.getTables().get(r2.getTableCount() - 1));
+                        List<Integer> randomChoose = new ArrayList<>();
+                        Random random = new Random(Time.currentElapsedTime());
+                        while (randomChoose.size() != 2) {
+                            int index = random.nextInt(regionsNotHaveTable.size());
+                            if (!randomChoose.contains(index)) {
+                                randomChoose.add(index);
+                            }
+                        }
+                        for (int i = 0; i < randomChoose.size(); i++) {
+                            int integer = randomChoose.get(i);
+                            Region slaveRegion = regionsNotHaveTable.get(integer);
+                            HashMap<String, String> map = new HashMap<>();
+                            map.put("tableName", r2.getTables().get(r2.getTableCount() - 1));
+                            map.put("region", r2.toZKNodeValue());
+                            String url = "http://" + slaveRegion.getHost() + ":" + slaveRegion.getPort() + "/dump";
+                            System.out.println(url);
+                            netUtils.sendPost(url, map);
+                        }
+                    } else {
+                        // 有regions删除了表
+                        // 通知所有相关的region删除这个表
+                        String TableName = r1.getTables().get(r1.getTableCount() - 1);
+                        if (TableName.endsWith("_slave")) {
+                            return;
+                        }
+                        List<Region> regionList = new ArrayList<>(regions);
+                        for (Region region : regionList) {
+                            if (region.getTables().contains(TableName + "_slave")) {
+                                region.getTables().remove(TableName + "_slave");
+                                try {
+                                    writeRegion(region);
+                                    // 发送drop信息
+                                    HashMap<String, String> map = new HashMap<>();
+                                    map.put("sql", "drop table " + TableName + ";");
+                                    String url = "http://" + region.getHost() + ":" + region.getPort() + "/exec";
+                                    netUtils.sendPost(url, map);
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                        }
                     }
-                }
-            }
-        }
-        return null;
+                })
+                .build());
+        curatorCache.start();
     }
 
     public Region getRegion(String name) {
@@ -163,16 +237,11 @@ public class ZKService {
 
     public Region getRegionInfoByPath(String path) throws Exception {
         byte[] data = curatorFramework.getData().forPath(path);
-        return ((JSONObject) JSON.parse(new String(data))).toJavaObject(Region.class);
+        return Region.deserializeFromString(new String(data));
     }
 
     public void writeRegion(Region region) throws Exception {
-        curatorFramework.setData().forPath("/lss/" + region.getRegionName(), JSON.toJSONString(region).getBytes());
-    }
-
-    @Deprecated
-    public void writeTable2RegionMapping() throws Exception {
-        curatorFramework.setData().forPath("/lss/__tableMeta__", JSON.toJSONString(tableRegions).getBytes());
+        curatorFramework.setData().forPath("/lss/" + region.getRegionName(), region.toZKNodeValue().getBytes());
     }
 
 

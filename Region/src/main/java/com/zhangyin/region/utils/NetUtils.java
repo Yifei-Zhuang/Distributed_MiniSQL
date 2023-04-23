@@ -3,6 +3,7 @@ package com.zhangyin.region.utils;
 import com.alibaba.fastjson2.JSONObject;
 import com.zhangyin.region.pojo.Region;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -18,13 +19,23 @@ public class NetUtils {
     Region region;
 
     public JSONObject sendPost(String url, HashMap<String, String> params) {
-        JSONObject paramMap = new JSONObject();
-        paramMap.putAll(params);
-        RestTemplate client = new RestTemplate();
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<JSONObject> httpEntity = new HttpEntity<>(paramMap, headers);
-        return client.postForEntity(url, httpEntity, JSONObject.class).getBody();
+        try {
+            if (!url.startsWith("http")) {
+                url = "http://" + url;
+            }
+            JSONObject paramMap = new JSONObject();
+            paramMap.putAll(params);
+            RestTemplateBuilder restTemplateBuilder = new RestTemplateBuilder();
+            RestTemplate client = restTemplateBuilder.build();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<JSONObject> httpEntity = new HttpEntity<>(paramMap, headers);
+            var result = client.postForEntity(url, httpEntity, JSONObject.class);
+            return result.getBody();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 
     public static String getIP() throws UnknownHostException {
@@ -37,6 +48,6 @@ public class NetUtils {
         }
         return localIP;
     }
-    
+
 
 }

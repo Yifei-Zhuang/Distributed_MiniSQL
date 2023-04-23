@@ -1,5 +1,6 @@
 package com.zhangyin.region;
 
+import com.zhangyin.region.service.SqlService;
 import com.zhangyin.region.service.ZKService;
 import com.zhangyin.region.timerEvent.RefreshRegion;
 import jakarta.annotation.PostConstruct;
@@ -16,6 +17,8 @@ public class RegionApplication {
 
     @Autowired
     ZKService zkService;
+    @Autowired
+    SqlService sqlService;
 
     //    @Autowired
 //    ListenDB listenDB;
@@ -34,6 +37,7 @@ public class RegionApplication {
     public void initZK() {
         try {
             zkService.init();
+            sqlService.init();
             initTimer();
 //            initCanal();
         } catch (Exception e) {
