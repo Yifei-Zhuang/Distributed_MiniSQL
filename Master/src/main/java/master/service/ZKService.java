@@ -113,11 +113,15 @@ public class ZKService {
                             return;
                         }
                         System.out.println("[cache]: create " + new String(childData.getData()));
-                        Region region = Region.deserializeFromString(new String(childData.getData()));
-                        for (Region region1 : regions) {
-                            if (region != null && region.equals(region1)) {
-                                return;
+                        try {
+                            Region region = Region.deserializeFromString(new String(childData.getData()));
+                            for (Region region1 : regions) {
+                                if (region != null && region.equals(region1)) {
+                                    return;
+                                }
                             }
+                        } catch (Exception e) {
+                            e.printStackTrace();
                         }
                     }
                 }).forDeletes(childData -> {

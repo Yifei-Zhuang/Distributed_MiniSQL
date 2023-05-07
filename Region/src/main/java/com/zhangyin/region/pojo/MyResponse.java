@@ -20,8 +20,8 @@ public class MyResponse {
         return new MyResponse(StatusCode.SUCCESS, msg, type);
     }
 
-    public static MyResponse fail(String type) {
-        return new MyResponse(StatusCode.FAIL, "", type);
+    public static MyResponse fail(String cause) {
+        return new MyResponse(StatusCode.FAIL, cause, "fail");
     }
 
     public static MyResponse fail(String msg, String type) {

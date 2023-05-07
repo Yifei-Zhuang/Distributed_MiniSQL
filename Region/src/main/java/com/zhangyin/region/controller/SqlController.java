@@ -69,7 +69,7 @@ public class SqlController {
         String regionString = map.get("region");
         Region masterRegion = Region.deserializeFromString(regionString);
         assert masterRegion != null;
-        String url = "mysqldump -uroot -h" + masterRegion.getHost() + " -pmysql " + masterRegion.getRegionName() + " " + tableName + " > ./" + tableName + ".sql";
+        String url = "mysqldump -uminisql -h" + masterRegion.getHost() + " -pmysql " + masterRegion.getRegionName() + " " + tableName + " > ./" + tableName + ".sql";
         System.out.println("[dump] mysqldump url: " + url);
 
         try {
@@ -80,7 +80,7 @@ public class SqlController {
             // 执行import命令
             File file = new File("./" + tableName + ".sql");
             if (file.exists()) {
-                String importUrl = "mysql -uroot -pmysql " + region.getRegionName() + " < ./" + tableName + ".sql";
+                String importUrl = "mysql -uminisql -pmysql " + region.getRegionName() + " < ./" + tableName + ".sql";
                 System.out.println("[dump] mysql import url: " + importUrl);
                 ProcessBuilder processBuilder1 = new ProcessBuilder();
                 processBuilder1.command("bash", "-c", importUrl);
@@ -92,17 +92,6 @@ public class SqlController {
         } catch (Exception e) {
             e.printStackTrace();
         }
-//        String path = map.get("path");
-//        String connUrl = environment.getProperty("spring.datasource.url");
-//        String[] temp = connUrl.split("/");
-//        String databaseName = temp[temp.length - 1];
-//        String cmd = "mysqldump -uroot -pmysql " + databaseName + " " + tableName + " > " + path;
-//        Runtime runtime = Runtime.getRuntime();
-//        try {
-//            runtime.exec(cmd);
-//        } catch (IOException e) {
-//            throw new RuntimeException(e);
-//        }
     }
 
     @PostMapping("/import")
@@ -114,7 +103,7 @@ public class SqlController {
             String connUrl = environment.getProperty("spring.datasource.url");
             String[] temp = connUrl.split("/");
             String databaseName = temp[temp.length - 1];
-            String cmd = "mysql -u root -pmysql " + databaseName + " < " + path;
+            String cmd = "mysql -u minisql -pmysql " + databaseName + " < " + path;
             Runtime runtime = Runtime.getRuntime();
             runtime.exec(cmd);
             zkService.createTable(region.toZKNodeValue(), tableName + "_slave");
