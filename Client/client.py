@@ -181,7 +181,7 @@ class Buffer:
                     self.__unsafe_append_region(region)
                     
                     
-    # region_data_watcher的回调函数,只处理CHANGE事件,删除等事件由region_list_watcher来处理
+    # region_data_watcher的回调函数,只处理CHANGE事件,节点被删除等事件由region_list_watcher来处理
     def region_data_changed(self,region_name: str, data: bytes, stat: ZnodeStat, event: WatchedEvent):
         with self.lock:
             # event仅在有改变时会设置,首次调用并不会设置
@@ -195,6 +195,11 @@ class Buffer:
                 
                 # 如果region里面存了表，则更新
                 if len(data_arr) > 4:
+                    # 删除旧数据
+                    for table in list(self.table_region_map.keys()):
+                        if self.table_region_map[table] == region_name:
+                            del self.table_region_map[table]
+
                     tables = data_arr[4:]
                     for table_name in tables:
                         if not table_name.endswith("_slave"):
