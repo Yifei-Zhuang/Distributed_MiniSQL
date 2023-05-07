@@ -1,4 +1,5 @@
-from kazoo.client import KazooClient, DataWatch
+from kazoo.client import KazooClient
+from kazoo.recipe.watchers import ChildrenWatch, DataWatch
 from functools import partial
 from kazoo.protocol.states import ZnodeStat, WatchedEvent, EventType
 import requests
@@ -16,7 +17,7 @@ class Buffer:
         self.region_hosts_map: dict[str, str] = dict()
         
         # 储存 region_name -> region_watcher 的映射
-        self.region_watchers: dict[str, partial[DataWatch]] = dict()
+        self.region_watchers: dict[str, DataWatch] = dict()
         # lss节点下children_list的监听器
         self.region_list_watcher = None
         
@@ -55,7 +56,7 @@ class Buffer:
     # 开启region节点列表监听
     def open_region_list_watcher(self):
         try:
-            self.region_list_watcher = self.zk.ChildrenWatch(self.node_path,self.region_list_changed)
+            self.region_list_watcher = ChildrenWatch(self.zk,self.node_path,self.region_list_changed)
         except Exception as e:
             print("ERROR: children_list_watcher Error:", e)
     
@@ -63,7 +64,7 @@ class Buffer:
     # 开启某个region的监视器
     def open_region_data_watcher(self, region_name):
         try:
-            region_watcher = self.zk.DataWatch(self.node_path+'/'+region_name,partial(self.region_data_changed, region_name))
+            region_watcher = DataWatch(self.zk,self.node_path+'/'+region_name,partial(self.region_data_changed, region_name))
             with self.lock:
                 self.region_watchers[region_name] = region_watcher
         except Exception as e:
@@ -82,17 +83,18 @@ class Buffer:
                         
                 self.region_names = self.zk.get_children(self.node_path)
                 for region_name in self.region_names:
-                    self.__unsave_append_region(region_name)
+                    self.__unsafe_append_region(region_name)
                 # 清除所有的watcher
-                # 根据chatGPT,直接调用该函数即可停止该监视器
+                # 根据https://stackoverflow.com/questions/40153340/how-to-stop-datawatch-on-zookeeper-node-using-kazoo
+                # 直接设置私有变量应该可以手动清除这个监视器
                 try:
-                    self.region_list_watcher()
+                    if self.region_list_watcher: self.region_list_watcher._stopped = True
                 except Exception as e:
                     print("ERROR: clear region_list_watcher Error", e)
                     
-                for watch in self.region_watchers:
+                for watch in self.region_watchers.values():
                     try:
-                        watch()
+                        watch._stopped = True
                     except Exception as e:
                         print("ERROR: clear region_watcher Error", e)   
                 self.region_list_watcher = None
@@ -208,9 +210,9 @@ class Buffer:
 class Client:
     def __init__(self, zk_hosts):
         self.zk = KazooClient(hosts=zk_hosts)
+        self.zk.start()
         # 查看zookeeper状态
         self.zk.add_listener(lambda state: print('INFO: ZooKeeper connection state:', state))
-        self.zk.start()
         # 新建一个线程锁，保证缓存的安全
         self.lock = threading.Lock()
         self.node_path = '/curator/lss'
@@ -303,18 +305,19 @@ class Client:
             print(response.json())
 
     def close(self):
+        self.zk.stop()
         self.zk.close()
 
 def print_help():
-    print("\n----------Help---------------")
+    print("----------Help---------------")
     print("input 'q' or 'Q' to quit")
     print("input 'h' for help")
     print("input others to exec sql")
-    print("-----------------------------\n")
+    print("-----------------------------")
 
 if __name__ == '__main__':
     # 自定义zookeeper_hosts
-    client = Client('127.0.0.1:2181')
+    client = Client('120.26.195.57:2181')
     print("Welcome!\n")
     print_help()
     while True:
