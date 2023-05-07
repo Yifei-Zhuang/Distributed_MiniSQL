@@ -258,15 +258,25 @@ class Client:
     
     # 负载均衡,从zk中查询并返回表最少的region的url
     def get_least_table_region_url(self) -> str:
+        
+        def get_master_table_count(data: str):
+            count = 0
+            data_list = data.split(",")
+            if len(data_list) <= 4: return 0
+            table_list = data_list[4:]
+            for table in table_list:
+                if not table.endswith("_slave"): count = count +1
+            return count
+        
         try: 
             # 从zk获得region的信息并统计
             regions: list[str] = self.zk.get_children(self.node_path)
             region_data_map: dict[str, int] = dict()
             for region in regions:
                 data = self.get_region_data(region)
-                region_data_map[region] = data.split(",")
+                region_data_map[region] = get_master_table_count(data)
             # 返回最短（即包含table最少）的region的url
-            min_region = min(region_data_map, key=lambda k: len(region_data_map[k]))
+            min_region = min(region_data_map, key=lambda k: region_data_map[k])
             # 返回 hosts:port
             return region_data_map[min_region][0]+":"+region_data_map[min_region][2]        
         except Exception as e:
