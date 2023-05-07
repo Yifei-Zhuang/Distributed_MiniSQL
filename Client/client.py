@@ -6,6 +6,7 @@ import requests
 import threading
 import json
 import sql_metadata
+from tabulate import tabulate
 
 class Buffer:
     def __init__(self,zk, node_path, lock) -> None:
@@ -32,8 +33,8 @@ class Buffer:
         self.refresh_buffer()
     
     
-    def get_region_url(self, table_name) -> str | None:
-        lock = self.lock if lock == None else lock
+    def get_region_url(self, table_name, lock=None) -> str | None:
+        if lock == None: lock = self.lock
         with lock:
             if table_name in self.table_region_map:
                 region_name = self.table_region_map[table_name]
@@ -74,7 +75,7 @@ class Buffer:
     # 重置整个buffer    
     def refresh_buffer(self, lock=None):
         # 获得线程安全锁
-        lock = self.lock if lock == None else lock
+        if lock == None: lock = self.lock
         try:
             with lock:
                 self.region_names.clear()
@@ -84,6 +85,7 @@ class Buffer:
                 self.region_names = self.zk.get_children(self.node_path)
                 for region_name in self.region_names:
                     self.__unsafe_append_region(region_name)
+
                 # 清除所有的watcher
                 # 根据https://stackoverflow.com/questions/40153340/how-to-stop-datawatch-on-zookeeper-node-using-kazoo
                 # 直接设置私有变量应该可以手动清除这个监视器
@@ -125,8 +127,7 @@ class Buffer:
     def __unsafe_delete_region(self, region_name):
         try:
             if self.region_watchers[region_name]:
-                # 根据chatGPT,直接调用该函数即可停止该监视器
-                self.region_watchers[region_name]()
+                self.region_watchers[region_name]._stopped = True
                 del self.region_watchers[region_name]
                 
             if self.region_hosts_map[region_name]:
@@ -179,14 +180,12 @@ class Buffer:
                 if region not in self.region_names:
                     self.__unsafe_append_region(region)
                     
-        # 原监视器在触发回调后会自动结束，因此我们需要重新起一个监视器
-        self.open_region_list_watcher()
-                    
                     
     # region_data_watcher的回调函数,只处理CHANGE事件,删除等事件由region_list_watcher来处理
     def region_data_changed(self,region_name: str, data: bytes, stat: ZnodeStat, event: WatchedEvent):
         with self.lock:
-            if event.type == EventType.CHANGED:
+            # event仅在有改变时会设置,首次调用并不会设置
+            if event and event.type == EventType.CHANGED:
                 data_str = data.decode()
                 data_arr = data_str.split(",")
                 
@@ -200,9 +199,6 @@ class Buffer:
                     for table_name in tables:
                         if not table_name.endswith("_slave"):
                             self.table_region_map[table_name] = region_name      
-                              
-        # 原监视器在触发回调后会自动结束，因此我们需要重新起一个监视器
-        self.open_region_data_watcher(region_name)
             
         
         
@@ -221,14 +217,31 @@ class Client:
         self.buffer = Buffer(self.zk,self.node_path, self.lock)
     
     
+    def print_buffer(self):
+        print("TABLE -> REGION")
+        for table in self.buffer.table_region_map:
+            print(table + " -> " + self.buffer.table_region_map[table])
+    
+    
     # 暂时不支持多表操作，因此只返回解析出的第一张表    
-    def get_table_from_sql(self, sql: str) -> list[str]:
-        return sql_metadata.Parser(sql).tables[0]
+    def get_table_from_sql(self, sql: str) -> str|None:
+        # 如果解析失败,说明sql不含有表
+        result = None
+        try:
+            result = sql_metadata.Parser(sql).tables[0]
+        except Exception as e:
+            print("Table parse failed!")
+        return result
     
     
     # 检查sql是否为create命令
     def is_create_sql(self, sql: str) -> bool:
-        return str(sql_metadata.Parser(sql).tokens[0]).lower() == "create"
+        result = False
+        try:
+            result = str(sql_metadata.Parser(sql).tokens[0]).lower() == "create"
+        except Exception as e:
+            return False
+        return result
     
     
     def get_region_data(self, region_name):
@@ -248,38 +261,49 @@ class Client:
             for region in regions:
                 data = self.get_region_data(region)
                 region_data_map[region] = data.split(",")
-            # 返回最长（即包含table最多）的region的url
-            max_region = max(region_data_map, key=lambda k: len(region_data_map[k]))
+            # 返回最短（即包含table最少）的region的url
+            min_region = min(region_data_map, key=lambda k: len(region_data_map[k]))
             # 返回 hosts:port
-            return region_data_map[0]+":"+region_data_map[2]        
+            return region_data_map[min_region][0]+":"+region_data_map[min_region][2]        
         except Exception as e:
             print("ERROR: get_least_table_region_url Error",e)
         
-        
-    # TODO: 格式化输出select    
+           
     def exec(self, sql):
         if self.is_create_sql(sql): # create命令,需要根据负载均衡找到所需的region_url
-            url = self.get_least_table_region() 
+            table_name = self.get_table_from_sql(sql)
+            url = self.get_least_table_region_url() 
         else:   # 非create命令,查找对应的table所在的region
             table_name = self.get_table_from_sql(sql)
-            url = Buffer.get_region_url(table_name)
+            if table_name == None:
+                print("No table in sql! CMD abort!")
+                return
+            url = self.buffer.get_region_url(table_name)
             # 检查Buffer内是否含有该table
             if url == None:
                 print("INFO: table_name not found in buffer!")
                 print("INFO: Buffer will be refreshed!")
                 self.buffer.refresh_buffer()
-                url = Buffer.get_region_url(table_name)
+                url = self.buffer.get_region_url(table_name)
                 if url == None:
                     print("WARNING: table_name not found in refreshed buffer!")
                     print("WARNING: Please check your sql!")
                     return
+        
+        print("Table: " + table_name + "  Region: " + url)
                 
         # 请求region超时后的最大尝试次数
         try_times = 3
         response: requests.Response = None
         while try_times != 0:
             try:
-                response: requests.Response = requests.post(url, data = json.dumps({"sql":sql}), timeout=4)
+                print("sql exec...")
+                data = json.dumps({"sql":sql})
+                headers = {"content-type":"application/json"}
+                response: requests.Response = requests.post("http://"+url+"/exec",
+                                                            data = data,
+                                                            headers = headers,
+                                                            timeout=4)
                 break
             except requests.exceptions.Timeout:
                 try_times = try_times - 1
@@ -288,37 +312,53 @@ class Client:
             print("Error: Max try time!")
             return None
         # 正常拿到了response
-        if response.ok():
+        if response.ok:
             result = response.json()
             if result["statusCode"].lower() != "success":
                 print("WARNING: sql exec failed!")
                 print(result["msg"])
             else:
+                print("Info: sql exec success!")
                 if result["type"].lower() != "select":
-                    print("Info: sql exec success!")
                     print(result["msg"])
                 else:
-                    # 格式化输出select
-                    pass
+                    self.select_print(result["msg"])
         else:
             print("WARNING: response not OK!")
             print(response.json())
+            
+    
+    def select_print(self, msg: str):
+        msg_dict: dict() = json.loads(msg)
+        fields = msg_dict["fields"]
+        datas = msg_dict["data"]
+        table_rows = []
+        for tuple in datas:
+            row = []
+            for field in fields:
+                row.append(tuple[field])
+            table_rows.append(row)
+        print(tabulate(table_rows, headers= fields, tablefmt='grid'))
+        
 
     def close(self):
         self.zk.stop()
         self.zk.close()
 
 def print_help():
-    print("----------Help---------------")
-    print("input 'q' or 'Q' to quit")
-    print("input 'h' for help")
+    print("-------------Help---------------")
+    print("input 'q' to quit")
+    print("input 'h' or 'help' to get help")
+    print("input 'b' to check buffer")
     print("input others to exec sql")
-    print("-----------------------------")
+    print("--------------------------------")
 
 if __name__ == '__main__':
     # 自定义zookeeper_hosts
     client = Client('120.26.195.57:2181')
-    print("Welcome!\n")
+    print("Client init done!")
+    print("Database status:")
+    client.print_buffer()
     print_help()
     while True:
         cmd = input("\ncmd:")
@@ -328,5 +368,7 @@ if __name__ == '__main__':
             client.close()
             print("Bye!")
             break
+        elif cmd.lower() == 'b':
+            client.print_buffer()
         else:
             client.exec(cmd)
