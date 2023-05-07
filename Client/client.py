@@ -218,9 +218,13 @@ class Client:
     
     
     def print_buffer(self):
-        print("TABLE -> REGION")
+        print("TABLE NAME -> REGION NAME")
         for table in self.buffer.table_region_map:
             print(table + " -> " + self.buffer.table_region_map[table])
+            
+        print("\nREGION NAME -> HOST")
+        for region in self.buffer.region_hosts_map:
+            print(region + " -> " + self.buffer.region_hosts_map[region])
     
     
     # 暂时不支持多表操作，因此只返回解析出的第一张表    

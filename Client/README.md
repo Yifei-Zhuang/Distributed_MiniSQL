@@ -13,7 +13,7 @@ conda create --name your_env_name python=3.10
 随后使用```pip```来安装依赖环境
 
 ```
-pip install requirements.txt
+pip install -r requirements.txt
 ```
 
 ## 使用
