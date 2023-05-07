@@ -271,12 +271,14 @@ class Client:
         try: 
             # 从zk获得region的信息并统计
             regions: list[str] = self.zk.get_children(self.node_path)
-            region_data_map: dict[str, int] = dict()
+            region_data_map: dict[str, list[str]] = dict()
+            region_table_count_map: dict[str, int] = dict()
             for region in regions:
                 data = self.get_region_data(region)
-                region_data_map[region] = get_master_table_count(data)
+                region_data_map[region] = data.split(",")
+                region_table_count_map[region] = get_master_table_count(data)
             # 返回最短（即包含table最少）的region的url
-            min_region = min(region_data_map, key=lambda k: region_data_map[k])
+            min_region = min(region_table_count_map, key=lambda k: region_table_count_map[k])
             # 返回 hosts:port
             return region_data_map[min_region][0]+":"+region_data_map[min_region][2]        
         except Exception as e:
@@ -306,25 +308,20 @@ class Client:
         
         print("Table: " + table_name + "  Region: " + url)
                 
-        # 请求region超时后的最大尝试次数
-        try_times = 3
         response: requests.Response = None
-        while try_times != 0:
-            try:
-                print("sql exec...")
-                data = json.dumps({"sql":sql})
-                headers = {"content-type":"application/json"}
-                response: requests.Response = requests.post("http://"+url+"/exec",
-                                                            data = data,
-                                                            headers = headers,
-                                                            timeout=4)
-                break
-            except requests.exceptions.Timeout:
-                try_times = try_times - 1
-                print("INFO: sql exec timeout, remain try: ", try_times)
-        if try_times == 0:
-            print("Error: Max try time!")
+        try:
+            print("sql exec...")
+            data = json.dumps({"sql":sql})
+            headers = {"content-type":"application/json"}
+            response: requests.Response = requests.post("http://"+url+"/exec",
+                                                        data = data,
+                                                        headers = headers,
+                                                        timeout=10)
+        except requests.exceptions.Timeout:
+            try_times = try_times - 1
+            print("ERROR: sql exec timeout!")
             return None
+
         # 正常拿到了response
         if response.ok:
             result = response.json()
@@ -364,7 +361,8 @@ def print_help():
     print("input 'q' to quit")
     print("input 'h' or 'help' to get help")
     print("input 'b' to check buffer")
-    print("input others to exec sql")
+    print("input 'r' to refresh buffer manually")
+    print("input sql to exec")
     print("--------------------------------")
 
 if __name__ == '__main__':
@@ -384,5 +382,7 @@ if __name__ == '__main__':
             break
         elif cmd.lower() == 'b':
             client.print_buffer()
+        elif cmd.lower() == 'r':
+            client.buffer.refresh_buffer()
         else:
             client.exec(cmd)
