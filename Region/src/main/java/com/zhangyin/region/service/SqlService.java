@@ -14,8 +14,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Service
 public class SqlService {
@@ -23,6 +25,7 @@ public class SqlService {
     private static final String JDBC_URL = "jdbc:mysql://127.0.0.1:3306/";
     private static final String USER = "minisql";
     private static final String PASSWORD = "mysql";
+    private static ConcurrentHashMap<String, ReentrantLock> lockMap = new ConcurrentHashMap<>();
     @Value("${zookeeper.client.name}")
     private String databaseName;
 
@@ -260,22 +263,34 @@ public class SqlService {
             if (tableName.endsWith(")")) {
                 tableName = tableName.substring(1, tableName.length() - 1);
             }
-            // 查询表是否已经存在
-            List<Region> regions = zkService.getAllRegions();
-            if ("create".equalsIgnoreCase(type)) {
-                for (Region pointer : regions) {
-                    if (pointer.containsTable(tableName) || pointer.containsTable(tableName + "_slave")) {
-                        throw new SQLException("表已经存在");
+            var lock = lockMap.get(tableName);
+            if (lock == null) {
+                lock = new ReentrantLock();
+                lockMap.put(tableName, lock);
+            }
+            lock.lock();
+            try {
+                // 查询表是否已经存在
+                List<Region> regions = zkService.getAllRegions();
+                if ("create".equalsIgnoreCase(type)) {
+                    for (Region pointer : regions) {
+                        if (pointer.containsTable(tableName) || pointer.containsTable(tableName + "_slave")) {
+                            throw new SQLException("表已经存在");
+                        }
                     }
                 }
+                boolean result = ps.execute(sql);
+                if ("create".equalsIgnoreCase(type)) {
+                    zkService.createTable(region.toZKNodeValue(), tableName);
+                } else if ("drop".equalsIgnoreCase(type)) {
+                    zkService.dropTable(region.toZKNodeValue(), tableName);
+                }
+                return result;
+            } catch (Exception e) {
+                throw e;
+            } finally {
+                lock.unlock();
             }
-            boolean result = ps.execute(sql);
-            if ("create".equalsIgnoreCase(type)) {
-                zkService.createTable(region.toZKNodeValue(), tableName);
-            } else if ("drop".equalsIgnoreCase(type)) {
-                zkService.dropTable(region.toZKNodeValue(), tableName);
-            }
-            return result;
         } catch (Exception e) {
             throw e;
         } finally {

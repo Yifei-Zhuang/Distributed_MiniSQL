@@ -19,6 +19,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author zhuangyifei
@@ -100,6 +103,8 @@ public class ZKService {
     }
 
     public void registerCallbacks() {
+        ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(10);
+
         CuratorCache curatorCache = CuratorCache.build(curatorFramework, "/lss");
         curatorCache.listenable().addListener(CuratorCacheListener.builder()
                 .forInitialized(() -> {
@@ -175,6 +180,7 @@ public class ZKService {
                     assert r2 != null;
                     if (r1.getTables().size() == r2.getTables().size()) {
                         // 主从迁移，不需要修改
+                        System.out.println("no need to do");
                         return;
                     } else if (r1.getTables().size() < r2.getTables().size()) {
                         // 有region增加了表
@@ -204,13 +210,25 @@ public class ZKService {
                     } else {
                         // 有regions删除了表
                         // 通知所有相关的region删除这个表
-                        String TableName = r1.getTables().get(r1.getTableCount() - 1);
+                        System.out.println("Table Deletes");
+//                        String TableName = r1.getTables().get(r1.getTableCount() - 1);
+                        String TableName = null;
+                        for (int i = 0; i < r1.getTables().size(); i++) {
+                            if (!r2.getTables().contains(r1.getTables().get(i))) {
+                                TableName = r1.getTables().get(i);
+                                break;
+                            }
+                        }
+                        System.out.println("TableName" + TableName);
                         if (TableName.endsWith("_slave")) {
                             return;
                         }
+                        refreshRegion();
                         List<Region> regionList = new ArrayList<>(regions);
                         for (Region region : regionList) {
+                            System.out.println("region: " + region + " TableName: " + TableName);
                             if (region.getTables().contains(TableName + "_slave")) {
+                                System.out.println("enter");
                                 region.getTables().remove(TableName + "_slave");
                                 try {
                                     writeRegion(region);
@@ -218,12 +236,27 @@ public class ZKService {
                                     HashMap<String, String> map = new HashMap<>();
                                     map.put("sql", "drop table " + TableName + ";");
                                     String url = "http://" + region.getHost() + ":" + region.getPort() + "/exec";
+                                    System.out.println("[delete first]: " + url + " sql: " + map.get("url"));
                                     netUtils.sendPost(url, map);
+                                    String finalTableName = TableName;
+                                    threadPool.schedule(() -> {
+                                        try {
+                                            HashMap<String, String> map1 = new HashMap<>();
+                                            map1.put("sql", "drop table " + finalTableName + "_slave;");
+                                            String url1 = url;
+                                            System.out.println("redelete: " + url1 + " sql: " + map1.get("sql"));
+                                            netUtils.sendPost(url1, map1);
+                                        } catch (Exception e) {
+                                            e.printStackTrace();
+                                        }
+                                    }, 3, TimeUnit.SECONDS);
+
                                 } catch (Exception e) {
                                     e.printStackTrace();
                                 }
                             }
                         }
+
                     }
                 })
                 .build());

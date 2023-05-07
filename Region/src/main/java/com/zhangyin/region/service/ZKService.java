@@ -68,8 +68,8 @@ public class ZKService {
             Region temp = Region.deserializeFromString(original);
             assert temp != null;
 
-            temp.tableCount++;
             temp.tables.add(newTable);
+            temp.tableCount = temp.getTables().size();
 
             curatorFramework.setData().forPath("/lss/" + regionName, temp.toZKNodeValue().getBytes());
             region.copyFrom(temp.toZKNodeValue());
@@ -83,12 +83,8 @@ public class ZKService {
         try {
             Region temp = Region.deserializeFromString(original);
             assert temp != null;
-
-            temp.tableCount--;
-            temp.tables = new ArrayList<>(temp.getTables().stream().filter(table -> {
-                return !table.equals(victim) && !table.equals(victim + "_slave");
-            }).toList());
-
+            temp.tables = new ArrayList<>(temp.getTables().stream().filter(table -> !table.equals(victim) && !table.equals(victim + "_slave")).toList());
+            temp.tableCount = temp.getTables().size();
             updateNode(temp);
         } catch (Exception e) {
             e.printStackTrace();
