@@ -21,7 +21,7 @@ import java.util.concurrent.Executors;
 public class SqlService {
 
     private static final String JDBC_URL = "jdbc:mysql://127.0.0.1:3306/";
-    private static final String USER = "root";
+    private static final String USER = "minisql";
     private static final String PASSWORD = "mysql";
     @Value("${zookeeper.client.name}")
     private String databaseName;
@@ -56,7 +56,7 @@ public class SqlService {
 
     public void init() throws SQLException {
         try {
-            Connection c = getConnectionWithoutDatabase();
+            Connection c = getConnection();
             Statement s = c.createStatement();
             s.execute("drop database if exists " + databaseName);
             s.execute("create database if not exists " + databaseName);
@@ -71,6 +71,7 @@ public class SqlService {
     public Connection getConnectionWithoutDatabase() {
         System.out.println("databaseName:" + databaseName);
         Connection conn = null;
+        System.out.println("JDBC_URL: " + JDBC_URL);
         try {
             conn = DriverManager.getConnection(JDBC_URL.substring(0, JDBC_URL.length() - 1), USER, PASSWORD);
         } catch (SQLException e) {
@@ -112,7 +113,7 @@ public class SqlService {
             int rowCount = ps.executeUpdate(sql);
             String tableName = null;
             String[] temp = sql.trim().split(" ");
-            if ("insert".equals(temp[0]) || "delete".equals(temp[0])) {
+            if ("insert".equalsIgnoreCase(temp[0]) || "delete".equalsIgnoreCase(temp[0])) {
                 tableName = temp[2];
             } else {
                 tableName = temp[1];
@@ -120,7 +121,7 @@ public class SqlService {
             boolean master = false;
             // 如果当前为master，进行主从同步
             for (String table : region.getTables()) {
-                if (table.equals(tableName)) {
+                if (table.equalsIgnoreCase(tableName)) {
                     master = true;
                     break;
                 }
@@ -131,7 +132,7 @@ public class SqlService {
             List<Region> regions = zkService.getAllRegions();
             for (Region pointer : regions) {
                 // 遍历所有的slave region，发送sql请求
-                if (pointer.getRegionName().equals(region.regionName) || !pointer.containsTable(tableName + "_slave")) {
+                if (pointer.getRegionName().equalsIgnoreCase(region.regionName) || !pointer.containsTable(tableName + "_slave")) {
                     continue;
                 }
                 // 对slave发送请求
@@ -236,16 +237,32 @@ public class SqlService {
             String[] temp = sql.trim().split(" ");
             String type = temp[0];
             String tableName = temp[2];
-            if ("if".equals(temp[2])) {
+            if ("if".equalsIgnoreCase(temp[2])) {
                 // drop table if exist a;
-                tableName = temp[4];
+                if ("not".equalsIgnoreCase(temp[3])) {
+                    tableName = temp[5];
+                } else {
+                    tableName = temp[4];
+                }
             }
             if (tableName.endsWith(";")) {
                 tableName = tableName.substring(0, tableName.length() - 1);
             }
+            if (tableName.endsWith("`")) {
+                tableName = tableName.substring(1, tableName.length() - 1);
+            }
+            if (tableName.endsWith(")")) {
+                tableName = tableName.substring(1, tableName.length() - 1);
+            }
+            if (tableName.endsWith("`")) {
+                tableName = tableName.substring(1, tableName.length() - 1);
+            }
+            if (tableName.endsWith(")")) {
+                tableName = tableName.substring(1, tableName.length() - 1);
+            }
             // 查询表是否已经存在
             List<Region> regions = zkService.getAllRegions();
-            if ("create".equals(type)) {
+            if ("create".equalsIgnoreCase(type)) {
                 for (Region pointer : regions) {
                     if (pointer.containsTable(tableName) || pointer.containsTable(tableName + "_slave")) {
                         throw new SQLException("表已经存在");
@@ -253,9 +270,9 @@ public class SqlService {
                 }
             }
             boolean result = ps.execute(sql);
-            if ("create".equals(type)) {
+            if ("create".equalsIgnoreCase(type)) {
                 zkService.createTable(region.toZKNodeValue(), tableName);
-            } else {
+            } else if ("drop".equalsIgnoreCase(type)) {
                 zkService.dropTable(region.toZKNodeValue(), tableName);
             }
             return result;
