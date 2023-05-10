@@ -29,6 +29,8 @@ public class ZKConfiguration {
     private int baseSleepTimeMs;
     @Value("${zookeeper.maxRetries}")
     private int maxRetries;
+    @Value("${local.ip}")
+    private String localIp;
 
     @Bean
     public CuratorFramework curatorFramework() throws Exception {
@@ -51,7 +53,9 @@ public class ZKConfiguration {
 
     @Bean
     public Region getRegion() {
-        return new Region();
+        Region region1 = new Region();
+        region1.setHost(localIp);
+        return region1;
     }
 
     @Bean
