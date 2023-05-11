@@ -15,10 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -141,33 +138,55 @@ public class ZKService {
                         System.out.println(region);
                         for (var table : tables) {
                             if (table.endsWith("_slave")) {
-                                continue;
-                            }
-                            // 这个表是主表，那么做主从切换
-                            // 具体来说，就是从region里选一个有这张表的节点，把这个region的这个表设置为主表
-                            // 由于之前做了数据同步，这里只需要修改zk里面的数据就可以了
-                            for (var r : regions) {
-                                if (r.getTables().contains(table + "_slave")) {
-                                    // 找到了一个有这张表的region
-                                    r.getTables().remove(table + "_slave");
-                                    r.getTables().add(table);
-                                    try {
-                                        writeRegion(r);
-                                        for (var r1 : regions) {
-                                            if (!r1.getTables().contains(table) && !r1.getTables().contains(table + "_slave")) {
-                                                // slave add
-                                                HashMap<String, String> map = new HashMap<>();
-                                                map.put("tableName", table);
-                                                map.put("region", r.toZKNodeValue());
-                                                String url = "http://" + r1.getHost() + ":" + r1.getPort() + "/dump";
-                                                System.out.println(url);
-                                                netUtils.sendPost(url, map);
-                                            }
-                                        }
-                                    } catch (Exception e) {
-                                        e.printStackTrace();
+                                // 选择新的region作为从 region
+                                regions.clear();
+                                regions.addAll(getAllRegions());
+                                Collections.shuffle(regions);
+                                for (Region r : regions) {
+                                    if (r.getTables().contains(table) || r.getTables().contains(table.substring(0, table.length() - 6))) {
+                                        continue;
                                     }
+                                    // slave add
+                                    HashMap<String, String> map = new HashMap<>();
+                                    map.put("tableName", table.substring(0, table.length() - 6));
+                                    map.put("region", region.toZKNodeValue());
+                                    String url = "http://" + r.getHost() + ":" + r.getPort() + "/dump";
+                                    System.out.println(url);
+                                    netUtils.sendPost(url, map);
                                     break;
+                                }
+                            } else {
+                                // 这个表是主表，那么做主从切换
+                                // 具体来说，就是从region里选一个有这张表的节点，把这个region的这个表设置为主表
+                                // 由于之前做了数据同步，这里只需要修改zk里面的数据就可以了
+                                for (var r : regions) {
+                                    if (r.getTables().contains(table + "_slave")) {
+                                        // 找到了一个有这张表的region
+                                        r.getTables().remove(table + "_slave");
+                                        r.getTables().add(table);
+                                        try {
+                                            writeRegion(r);
+                                            regions.clear();
+                                            regions.addAll(getAllRegions());
+                                            Collections.shuffle(regions);
+                                            for (var r1 : regions) {
+                                                if (!r1.getTables().contains(table) && !r1.getTables().contains(table + "_slave")) {
+                                                    // slave add
+                                                    HashMap<String, String> map = new HashMap<>();
+                                                    map.put("tableName", table);
+                                                    map.put("region", r.toZKNodeValue());
+                                                    String url = "http://" + r1.getHost() + ":" + r1.getPort() + "/dump";
+                                                    System.out.println(url);
+                                                    netUtils.sendPost(url, map);
+                                                    break;
+                                                }
+                                            }
+                                            System.out.println("[registerCallbacks::forDeletes] handle fail, node migration fail in ");
+                                        } catch (Exception e) {
+                                            e.printStackTrace();
+                                        }
+                                        break;
+                                    }
                                 }
                             }
                         }
