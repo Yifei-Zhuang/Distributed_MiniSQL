@@ -168,7 +168,6 @@ class Buffer:
     # 由于整个函数已经保证了线程安全,因此在内部使用__unsave函数
     def region_list_changed(self, region_list: list[str]):      
         with self.lock:
-            self.region_names = region_list
             # 在缓存中删除已经失效的节点
             for region in self.region_names:
                 if region not in region_list:
@@ -179,6 +178,8 @@ class Buffer:
             for region in region_list:
                 if region not in self.region_names:
                     self.__unsafe_append_region(region)
+            
+            self.region_names = region_list
                     
                     
     # region_data_watcher的回调函数,只处理CHANGE事件,节点被删除等事件由region_list_watcher来处理
