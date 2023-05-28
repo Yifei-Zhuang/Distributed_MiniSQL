@@ -55,19 +55,21 @@ class Buffer:
             print("ERROR: get_region_data Error", e)
     
     # 开启region节点列表监听
-    def open_region_list_watcher(self):
+    # 首次开启时会自动执行region_list_changed函数,但是不会设置event,因此函数会自动结束,不需要提供锁
+    # 设置send_event=True,可以在回调函数中获得event
+    # https://kazoo.readthedocs.io/en/latest/api/recipe/watchers.html#kazoo.recipe.watchers.ChildrenWatch
+    def open_region_list_watcher(self) -> ChildrenWatch:
         try:
-            self.region_list_watcher = ChildrenWatch(self.zk,self.node_path,self.region_list_changed)
+            return ChildrenWatch(self.zk,self.node_path,self.region_list_changed,send_event=True)
         except Exception as e:
             print("ERROR: children_list_watcher Error:", e)
     
     
     # 开启某个region的监视器
-    def open_region_data_watcher(self, region_name):
+    # 首次开启时会自动执行region_data_changed函数,但是不会设置event,因此函数会自动结束,不需要提供锁
+    def open_region_data_watcher(self, region_name) -> DataWatch:
         try:
-            region_watcher = DataWatch(self.zk,self.node_path+'/'+region_name,partial(self.region_data_changed, region_name))
-            with self.lock:
-                self.region_watchers[region_name] = region_watcher
+            return DataWatch(self.zk,self.node_path+'/'+region_name,partial(self.region_data_changed, region_name))
         except Exception as e:
             print("ERROR: region_data_watcher Error:", e)
              
@@ -81,10 +83,6 @@ class Buffer:
                 self.region_names.clear()
                 self.table_region_map.clear()
                 self.region_hosts_map.clear()
-                        
-                self.region_names = self.zk.get_children(self.node_path)
-                for region_name in self.region_names:
-                    self.__unsafe_append_region(region_name)
 
                 # 清除所有的watcher
                 # 根据https://stackoverflow.com/questions/40153340/how-to-stop-datawatch-on-zookeeper-node-using-kazoo
@@ -101,11 +99,15 @@ class Buffer:
                         print("ERROR: clear region_watcher Error", e)   
                 self.region_list_watcher = None
                 self.region_watchers.clear()
+             
+                # 重新添加所有的region节点
+                self.region_names = self.zk.get_children(self.node_path)
+                for region_name in self.region_names:
+                    self.__unsafe_append_region(region_name)
                     
-            # 重新打开所有的watcher    
-            self.open_region_list_watcher()
-            for region_name in self.region_names:
-                self.open_region_data_watcher(region_name)
+                # 重新打开列表监听器    
+                self.region_list_watcher = self.open_region_list_watcher()
+
         except Exception as e:
             print("ERROR: refresh_buffer Error",e)
     
@@ -126,11 +128,11 @@ class Buffer:
     # 在整个缓存中删除有关该region的所有信息
     def __unsafe_delete_region(self, region_name):
         try:
-            if self.region_watchers[region_name]:
+            if self.region_watchers.get(region_name):
                 self.region_watchers[region_name]._stopped = True
                 del self.region_watchers[region_name]
                 
-            if self.region_hosts_map[region_name]:
+            if self.region_hosts_map.get(region_name):
                 del self.region_hosts_map[region_name]
             
             # 删除table_region_map中value是region_name的键值对
@@ -163,30 +165,35 @@ class Buffer:
             for master_table in master_tables:
                 self.table_region_map[master_table] = region_name
         
+        watcher = self.open_region_data_watcher(region_name)
+        self.region_watchers[region_name] = watcher
+        
     
     # region_list_watcher的回调函数,查看是否有节点被删除或新增
     # 由于整个函数已经保证了线程安全,因此在内部使用__unsave函数
-    def region_list_changed(self, region_list: list[str]):      
-        with self.lock:
-            # 在缓存中删除已经失效的节点
-            for region in self.region_names:
-                if region not in region_list:
-                    self.__unsafe_delete_region(region)
-                    
-            # 在缓存中新增节点
-            # 由于region_hosts_name已经发生更改，需要重新获取keys
-            for region in region_list:
-                if region not in self.region_names:
-                    self.__unsafe_append_region(region)
-            
-            self.region_names = region_list
+    def region_list_changed(self, region_list: list[str], event: WatchedEvent):
+        # event首次调用并不会设置,借此来避免死锁
+        if event:      
+            with self.lock:
+                # 在缓存中删除已经失效的节点
+                for region in self.region_names:
+                    if region not in region_list:
+                        self.__unsafe_delete_region(region)
+                        
+                # 在缓存中新增节点
+                # 由于region_hosts_name已经发生更改，需要重新获取keys
+                for region in region_list:
+                    if region not in self.region_names:
+                        self.__unsafe_append_region(region)
+                
+                self.region_names = region_list
                     
                     
     # region_data_watcher的回调函数,只处理CHANGE事件,节点被删除等事件由region_list_watcher来处理
     def region_data_changed(self,region_name: str, data: bytes, stat: ZnodeStat, event: WatchedEvent):
-        with self.lock:
-            # event仅在有改变时会设置,首次调用并不会设置
-            if event and event.type == EventType.CHANGED:
+        # event仅在有改变时会设置,首次调用并不会设置,借此来避免死锁
+        if event and event.type == EventType.CHANGED:
+            with self.lock:
                 data_str = data.decode()
                 data_arr = data_str.split(",")
                 
